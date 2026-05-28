@@ -5,12 +5,7 @@ const GEMINI_API_BASE =
   "https://generativelanguage.googleapis.com/v1beta";
 const TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 360_000;
 
-async function chatJson(system, user, { temperature = 0.3 } = {}) {
-  if (!GEMINI_API_KEY) {
-    throw new Error(
-      "GEMINI_API_KEY is not set — add it to server/.env (and run via the npm scripts so the file is loaded)."
-    );
-  }
+async function _chatJsonOnce(system, user, temperature) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
@@ -33,7 +28,9 @@ async function chatJson(system, user, { temperature = 0.3 } = {}) {
     });
     if (!r.ok) {
       const errText = await r.text().catch(() => "");
-      throw new Error(`Gemini HTTP ${r.status}: ${errText.slice(0, 500)}`);
+      const err = new Error(`Gemini HTTP ${r.status}: ${errText.slice(0, 500)}`);
+      err.status = r.status;
+      throw err;
     }
     const data = await r.json();
     const candidate = data?.candidates?.[0];
@@ -46,6 +43,32 @@ async function chatJson(system, user, { temperature = 0.3 } = {}) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function chatJson(system, user, { temperature = 0.3 } = {}) {
+  if (!GEMINI_API_KEY) {
+    throw new Error(
+      "GEMINI_API_KEY is not set — add it to server/.env (and run via the npm scripts so the file is loaded)."
+    );
+  }
+  const backoffs = [0, 2000, 5000, 12000]; // initial attempt + 3 retries
+  let lastError = null;
+  for (let i = 0; i < backoffs.length; i++) {
+    if (backoffs[i] > 0) {
+      console.warn(
+        `  Gemini retry ${i}/${backoffs.length - 1} in ${backoffs[i]}ms (${lastError?.message || lastError})`
+      );
+      await new Promise((r) => setTimeout(r, backoffs[i]));
+    }
+    try {
+      return await _chatJsonOnce(system, user, temperature);
+    } catch (e) {
+      lastError = e;
+      const transient = e.status === 429 || (e.status >= 500 && e.status < 600);
+      if (!transient) throw e;
+    }
+  }
+  throw lastError || new Error("Gemini chatJson failed after retries");
 }
 
 function projectBrief(meta) {
