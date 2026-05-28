@@ -1,0 +1,7 @@
+node_modules/
+server/output/*.pptx
+server/output/*.docx
+dist/
+.env
+.env.local
+.cache/

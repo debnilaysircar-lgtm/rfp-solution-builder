@@ -1,0 +1,55 @@
+{
+  "clientName": "Acme Group",
+  "projectName": "SAP AMS Tech Factory",
+  "folderPath": "C:/Users/debnilay.sircar/OneDrive - Accenture/1. Initiative/RFP/Chaloub",
+  "opportunityId": "0012321615",
+  "marketUnit": "EMEA",
+  "contractValue": "10.1 M$",
+  "contractType": "Fixed · Output-based AO",
+  "contractTerm": "36 months",
+  "cci": "36%",
+  "deliveryWindow": "12×6 + 24×7 P1/P2",
+  "notes": "Acme Group is migrating to SAP RISE PCE; this engagement covers the SAP technology layer above the RISE line for three years.",
+  "team": [
+    ["Solution Architect", "S. Biswal", "Cross-tower technical solution"],
+    ["Engagement Lead", "P. Kumar", "Commercials & governance"],
+    ["Tower Lead — Basis", "TBD", "SAP Basis"]
+  ],
+  "volumetrics": {
+    "users": "4,900",
+    "incidents": "374",
+    "tickets": "480",
+    "changes": "35",
+    "prodSids": "10",
+    "nonProdSids": "21",
+    "saasApps": "21",
+    "btpServices": "42",
+    "securityTickets": "170",
+    "rolesManaged": "600",
+    "sodViolations": "12",
+    "firefighterSessions": "8"
+  },
+  "assumptions": [
+    "SAP RISE PCE responsibility split applies; clock-stops apply for ECS-dependent tickets.",
+    "Client retains ownership of business processes and master data.",
+    "Knowledge transfer from SI vendor in place by start of Transition phase.",
+    "Tooling licenses (Cloud ALM, Focused Run) in place at Go-Live."
+  ],
+  "outOfScope": [
+    "Functional application support (covered by separate AO team).",
+    "Master-data ownership.",
+    "End-user training.",
+    "Third-party application support (non-SAP)."
+  ],
+  "products": [
+    { "name": "SAP S/4HANA", "acronym": null, "description": "Flagship next-gen ERP, on-premise and cloud.", "category": "1. Flagship & Core ERP", "legacy": false },
+    { "name": "SAP HANA", "acronym": "HANA", "description": "In-memory column-store database.", "category": "3. Database & Data Platform", "legacy": false },
+    { "name": "SAP BTP", "acronym": "BTP", "description": "Business Technology Platform.", "category": "5. Integration, Extension & Platform", "legacy": false },
+    { "name": "SAP Solution Manager", "acronym": "SolMan", "description": "ALM platform.", "category": "7. ALM & Operations", "legacy": false }
+  ],
+  "capabilities": [
+    { "id": "SAP Basis > Runtime Architecture > Channels > POS", "label": "POS", "path": "SAP Basis > Runtime Architecture > Channels > POS", "section": "SAP_AMS_Architecture_Tree", "level": "Sr. Cons.", "fteY1": "1.5", "fteY2": "1.2", "fteY3": "1.0" },
+    { "id": "SAP Basis > Security > Authorisation Management", "label": "Authorisation Management", "path": "SAP Basis > Security > Authorisation Management", "section": "SAP_AMS_Architecture_Tree", "level": "Cons.", "fteY1": "1.0", "fteY2": "0.9", "fteY3": "0.8" },
+    { "id": "SolMan / Cloud ALM > Monitoring > System Health", "label": "System Health", "path": "SolMan / Cloud ALM > Monitoring > System Health", "section": "SAP_AMS_Architecture_Tree", "level": "Cons.", "fteY1": "0.8", "fteY2": "0.6", "fteY3": "0.5" }
+  ]
+}
