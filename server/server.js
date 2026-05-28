@@ -23,6 +23,8 @@ import {
   generateDependencies,
   generateNarrativeSections,
   generateRaci,
+  generateInScope,
+  generateOutOfScope,
 } from "./gemini.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -197,8 +199,10 @@ app.post("/api/generate", async (req, res) => {
   const dependenciesQuery = `${meta.projectName} ${productList} dependencies infrastructure licenses vendor SAP RISE ECS SI handover ${capList}`;
   const narrativeQuery = `${meta.projectName} ${productList} executive summary deliverables risks limited scope exclusions synergy SI to AMS handover ${capList}`;
   const raciQuery = `${meta.projectName} ${productList} RACI matrix responsibility split Accenture client SAP ECS CISO audit firefighter access governance ${capList}`;
+  const inScopeQuery = `${meta.projectName} ${productList} in scope service catalog activity detail SAP AMS responsibility daily weekly monthly periodic ${capList}`;
+  const outOfScopeQuery = `${meta.projectName} ${productList} out of scope exclusions SAP ECS RISE infrastructure functional changes 3rd party owner ${capList}`;
 
-  const [assumptionsCtx, dependenciesCtx, narrativeCtx, raciCtx] = await Promise.all([
+  const [assumptionsCtx, dependenciesCtx, narrativeCtx, raciCtx, inScopeCtx, outOfScopeCtx] = await Promise.all([
     searchSolutions(assumptionsQuery, 6).catch((e) => {
       console.warn("RAG search (assumptions) failed:", e.message);
       return [];
@@ -215,9 +219,17 @@ app.post("/api/generate", async (req, res) => {
       console.warn("RAG search (raci) failed:", e.message);
       return [];
     }),
+    searchSolutions(inScopeQuery, 6).catch((e) => {
+      console.warn("RAG search (in-scope) failed:", e.message);
+      return [];
+    }),
+    searchSolutions(outOfScopeQuery, 6).catch((e) => {
+      console.warn("RAG search (out-of-scope) failed:", e.message);
+      return [];
+    }),
   ]);
   console.log(
-    `RAG: ${assumptionsCtx.length} assumption, ${dependenciesCtx.length} dependency, ${narrativeCtx.length} narrative, ${raciCtx.length} raci chunks`
+    `RAG: ${assumptionsCtx.length} assumption, ${dependenciesCtx.length} dependency, ${narrativeCtx.length} narrative, ${raciCtx.length} raci, ${inScopeCtx.length} in-scope, ${outOfScopeCtx.length} out-of-scope chunks`
   );
 
   const userInstructions = String(req.body.userInstructions || "").trim();
@@ -256,6 +268,8 @@ app.post("/api/generate", async (req, res) => {
     console.log(`  narrative done in ${Math.round((Date.now() - t0) / 1000)}s`);
   }
   let llmRaci = null;
+  let llmInScope = null;
+  let llmOutOfScope = null;
   if ((meta.capabilities || []).length > 0) {
     console.log("Calling LLM for RACI matrix...");
     const t0 = Date.now();
@@ -264,6 +278,23 @@ app.post("/api/generate", async (req, res) => {
       return null;
     });
     console.log(`  raci done in ${Math.round((Date.now() - t0) / 1000)}s (${llmRaci?.length || 0} rows)`);
+
+    console.log("Calling LLM for In-Scope statements...");
+    const t1 = Date.now();
+    llmInScope = await generateInScope(meta, inScopeCtx, userInstructions).catch((e) => {
+      console.warn("LLM in-scope failed:", e.message);
+      return null;
+    });
+    console.log(`  in-scope done in ${Math.round((Date.now() - t1) / 1000)}s (${llmInScope?.length || 0} rows)`);
+  }
+  if ((meta.outOfScope || []).length > 0 || (meta.gapTreeOoS || []).length > 0) {
+    console.log("Calling LLM for Out-of-Scope rationales...");
+    const t2 = Date.now();
+    llmOutOfScope = await generateOutOfScope(meta, outOfScopeCtx, userInstructions).catch((e) => {
+      console.warn("LLM out-of-scope failed:", e.message);
+      return null;
+    });
+    console.log(`  out-of-scope done in ${Math.round((Date.now() - t2) / 1000)}s (${llmOutOfScope?.length || 0} rows)`);
   }
   if (llmAssumptions && llmAssumptions.length > 0) {
     meta.assumptions = llmAssumptions;
@@ -273,6 +304,12 @@ app.post("/api/generate", async (req, res) => {
   }
   if (llmRaci && llmRaci.length > 0) {
     meta.raci = llmRaci;
+  }
+  if (llmInScope && llmInScope.length > 0) {
+    meta.llmInScope = llmInScope;
+  }
+  if (llmOutOfScope && llmOutOfScope.length > 0) {
+    meta.llmOutOfScope = llmOutOfScope;
   }
   if (llmNarrative) {
     if (llmNarrative.executiveSummary) meta.executiveSummary = llmNarrative.executiveSummary;

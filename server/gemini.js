@@ -188,6 +188,106 @@ export async function generateNarrativeSections(meta, contextChunks = [], userIn
   };
 }
 
+export async function generateInScope(meta, contextChunks = [], userInstructions = "") {
+  const capabilities = Array.isArray(meta.capabilities) ? meta.capabilities : [];
+  if (capabilities.length === 0) return [];
+
+  const listing = capabilities.slice(0, 60).map((cap) => {
+    const path = String(cap.path || cap.label || "").trim();
+    const segs = path.split(" > ").map((s) => s.trim()).filter(Boolean);
+    const tower = segs[0] || "General";
+    const label = String(cap.label || segs[segs.length - 1] || path).trim();
+    return { tower, label };
+  }).filter((c) => c.label);
+  const towerListing = listing
+    .reduce((acc, c) => {
+      const last = acc[acc.length - 1];
+      if (last && last.tower === c.tower) last.items.push(c.label);
+      else acc.push({ tower: c.tower, items: [c.label] });
+      return acc;
+    }, [])
+    .map((g) => `Tower: ${g.tower}\n` + g.items.map((i) => `  - ${i}`).join("\n"))
+    .join("\n\n");
+
+  const system =
+    "You are a senior SAP AMS solution architect writing the In-Scope section of a Solution Deck and SoW. " +
+    "For each capability in CAPABILITIES IN SCOPE, produce ONE very concise scope statement (MAX 18 words, single sentence) describing precisely what Accenture covers for that capability. " +
+    "Each statement MUST be specific and tailored: name the SAP product or tool involved, the trigger or cadence (CR / INC / SR / Daily / Weekly / Monthly / Periodic), and the ownership boundary where relevant. " +
+    "FORBIDDEN: generic boilerplate such as 'Accenture operates and maintains X under AMS SLAs', 'Accenture provides support for X', or any sentence that reads the same as another row. Each statement must be unique. " +
+    "Use the reference excerpts (from past similar SAP AMS proposals) for the kinds of details and phrasing that fit, but rewrite for this client; do not name other clients. " +
+    "If USER INSTRUCTIONS are provided, they take precedence over all other style guidance. " +
+    "Return strict JSON: { \"inScope\": [ { \"capability\": string (must match the input label exactly), \"tower\": string (must match the input tower), \"scope\": string } ] }. Produce exactly one row per input capability, in the same order.";
+  const user = buildUserMessage({
+    task:
+      "Write a concise tabular In-Scope statement for each capability listed below. One short sentence per row. Order MUST match input.\n\nCAPABILITIES IN SCOPE:\n\n" +
+      towerListing,
+    meta,
+    contextChunks,
+    userInstructions,
+  });
+
+  const out = await chatJson(system, user, { temperature: 0.6 });
+  const items = Array.isArray(out?.inScope) ? out.inScope : [];
+  return items
+    .map((row) => ({
+      capability: String(row?.capability || "").trim(),
+      tower: String(row?.tower || "").trim() || "General",
+      scope: String(row?.scope || "").trim(),
+    }))
+    .filter((r) => r.capability && r.scope);
+}
+
+export async function generateOutOfScope(meta, contextChunks = [], userInstructions = "") {
+  const userOoS = Array.isArray(meta.outOfScope)
+    ? meta.outOfScope.filter(Boolean).map((s) => ({ section: "Engagement-level", label: String(s).trim() }))
+    : [];
+  const gapOoS = Array.isArray(meta.gapTreeOoS)
+    ? meta.gapTreeOoS.map((it) => ({
+        section: String(it.section || "General").trim(),
+        label: String(it.leafLabel || it.label || (it.path || "").split(" > ").pop() || "").trim(),
+      }))
+    : [];
+  const allItems = [...userOoS, ...gapOoS].filter((it) => it.label).slice(0, 60);
+  if (allItems.length === 0) return [];
+
+  const grouped = allItems.reduce((acc, it) => {
+    const last = acc[acc.length - 1];
+    if (last && last.section === it.section) last.items.push(it.label);
+    else acc.push({ section: it.section, items: [it.label] });
+    return acc;
+  }, []);
+  const listing = grouped
+    .map((g) => `Section: ${g.section}\n` + g.items.map((i) => `  - ${i}`).join("\n"))
+    .join("\n\n");
+
+  const system =
+    "You are a senior SAP AMS solution architect writing the Out-of-Scope section of a Solution Deck and SoW. " +
+    "For each item listed in OUT-OF-SCOPE ITEMS, produce ONE very concise rationale (MAX 22 words, single sentence) explaining WHY it is excluded AND who actually owns it. " +
+    "Each rationale MUST be specific: name the responsible party (SAP ECS, client business team, client CISO, 3rd-party SI, hyperscaler, etc.) and the contractual or technical reason for the exclusion. " +
+    "FORBIDDEN: generic phrasings like 'X is outside the scope of this AMS engagement' or 'Not in scope; covered separately'. Each rationale must read uniquely and informatively. " +
+    "Use the reference excerpts (from past similar SAP AMS proposals) for the kinds of exclusions and rationales that fit; do not name other clients. " +
+    "If USER INSTRUCTIONS are provided, they take precedence over all other style guidance. " +
+    "Return strict JSON: { \"outOfScope\": [ { \"section\": string (must match input section), \"item\": string (must match input label exactly), \"rationale\": string } ] }. Produce exactly one row per input item, in the same order.";
+  const user = buildUserMessage({
+    task:
+      "Produce a concise tabular Out-of-Scope rationale for each item below. One short sentence per row. Order MUST match input.\n\nOUT-OF-SCOPE ITEMS:\n\n" +
+      listing,
+    meta,
+    contextChunks,
+    userInstructions,
+  });
+
+  const out = await chatJson(system, user, { temperature: 0.6 });
+  const items = Array.isArray(out?.outOfScope) ? out.outOfScope : [];
+  return items
+    .map((row) => ({
+      section: String(row?.section || "").trim() || "General",
+      item: String(row?.item || "").trim(),
+      rationale: String(row?.rationale || "").trim(),
+    }))
+    .filter((r) => r.item && r.rationale);
+}
+
 export async function generateRaci(meta, contextChunks = [], userInstructions = "") {
   const capabilities = Array.isArray(meta.capabilities) ? meta.capabilities : [];
   if (capabilities.length === 0) return [];

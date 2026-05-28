@@ -263,18 +263,39 @@ export async function generateDocx(meta, outPath) {
     }
   }
 
-  // 2.2 Capabilities — verbose in-scope narrative
-  children.push(heading("2.2 In-scope Architecture Capabilities (verbose)", HeadingLevel.HEADING_2));
+  // 2.2 Capabilities — concise LLM-generated in-scope statements (tabular)
+  const hasLLMInScope = Array.isArray(meta.llmInScope) && meta.llmInScope.length > 0;
+  children.push(heading("2.2 In-scope Architecture Capabilities", HeadingLevel.HEADING_2));
   children.push(
     p(
-      `Each capability listed below is in scope under the AMS engagement. For each, the ` +
-        `architecture path, full description, FTE allocation across the contract term and the ` +
-        `delivery level are documented.`
+      hasLLMInScope
+        ? `Each capability is in scope under the AMS engagement; the table below states what Accenture covers per capability in a concise, tailored form.`
+        : `Each capability listed below is in scope under the AMS engagement.`
     )
   );
 
   if (meta.capabilities.length === 0) {
     children.push(p("No capabilities selected.", { italic: true, color: COLORS.muted }));
+  } else if (hasLLMInScope) {
+    const widths = [5, 30, 65];
+    const byTower = groupBy(meta.llmInScope, (r) => r.tower || "General");
+    for (const [tower, rows] of byTower.entries()) {
+      children.push(heading(tower, HeadingLevel.HEADING_3));
+      const tableRows = [
+        [
+          headerCell("#", widths[0]),
+          headerCell("Capability", widths[1]),
+          headerCell("Scope", widths[2]),
+        ],
+        ...rows.map((row, i) => [
+          cell(String(i + 1), { width: widths[0], alignment: AlignmentType.CENTER, color: COLORS.muted }),
+          cell(row.capability, { width: widths[1], bold: true }),
+          cell(row.scope, { width: widths[2] }),
+        ]),
+      ];
+      children.push(table(tableRows, widths));
+      children.push(p(" ", { size: 8 }));
+    }
   } else {
     const inferFrequency = (label, path) => {
       const t = ((label || "") + " " + (path || "")).toLowerCase();
@@ -760,35 +781,62 @@ export async function generateDocx(meta, outPath) {
   for (const a of assumptions) children.push(bullet(a));
 
   // ----- 15. OUT OF SCOPE -----
+  const hasLLMOoS = Array.isArray(meta.llmOutOfScope) && meta.llmOutOfScope.length > 0;
   children.push(heading("15. Out of Scope"));
   children.push(
     p(
-      `The items below are explicitly outside the scope of this AMS engagement. Ownership remains with ${meta.clientName} ` +
-        `or the responsible third party; items may be engaged via Change Request through the Service Delivery Manager.`
+      hasLLMOoS
+        ? `The items below are explicitly outside scope; each row notes the responsible party and the contractual or technical reason for the exclusion.`
+        : `The items below are explicitly outside the scope of this AMS engagement. Ownership remains with ${meta.clientName} ` +
+            `or the responsible third party; items may be engaged via Change Request through the Service Delivery Manager.`
     )
   );
 
-  const userOoS = (meta.outOfScope || []).map((it) => ({
-    section: "Engagement-level declarations",
-    label: it,
-  }));
-  const gapItems = (meta.gapTreeOoS || []).map((it) => ({
-    section: it.section || "General",
-    label: it.label || (it.path || "").split(" > ").pop() || "—",
-  }));
-  const detailItems = [...userOoS, ...gapItems];
-  const oosBySection = groupBy(detailItems, (it) => it.section || "General");
-
-  if (detailItems.length === 0) {
-    children.push(p("No out-of-scope items defined.", { italic: true, color: COLORS.muted }));
-  } else {
+  if (hasLLMOoS) {
+    const oosBySection = groupBy(meta.llmOutOfScope, (r) => r.section || "General");
     let oosIdx = 1;
-    for (const [section, items] of oosBySection.entries()) {
+    const widths = [5, 30, 65];
+    for (const [section, rows] of oosBySection.entries()) {
       children.push(heading(`15.${oosIdx} ${section}`, HeadingLevel.HEADING_2));
-      for (const it of items) {
-        children.push(bullet(it.label));
-      }
+      const tableRows = [
+        [
+          headerCell("#", widths[0]),
+          headerCell("Item", widths[1]),
+          headerCell("Rationale", widths[2]),
+        ],
+        ...rows.map((row, i) => [
+          cell(String(i + 1), { width: widths[0], alignment: AlignmentType.CENTER, color: COLORS.muted }),
+          cell(row.item, { width: widths[1], bold: true, color: COLORS.warn }),
+          cell(row.rationale, { width: widths[2] }),
+        ]),
+      ];
+      children.push(table(tableRows, widths));
+      children.push(p(" ", { size: 8 }));
       oosIdx++;
+    }
+  } else {
+    const userOoS = (meta.outOfScope || []).map((it) => ({
+      section: "Engagement-level declarations",
+      label: it,
+    }));
+    const gapItems = (meta.gapTreeOoS || []).map((it) => ({
+      section: it.section || "General",
+      label: it.label || (it.path || "").split(" > ").pop() || "—",
+    }));
+    const detailItems = [...userOoS, ...gapItems];
+    const oosBySection = groupBy(detailItems, (it) => it.section || "General");
+
+    if (detailItems.length === 0) {
+      children.push(p("No out-of-scope items defined.", { italic: true, color: COLORS.muted }));
+    } else {
+      let oosIdx = 1;
+      for (const [section, items] of oosBySection.entries()) {
+        children.push(heading(`15.${oosIdx} ${section}`, HeadingLevel.HEADING_2));
+        for (const it of items) {
+          children.push(bullet(it.label));
+        }
+        oosIdx++;
+      }
     }
   }
 

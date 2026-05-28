@@ -1162,6 +1162,43 @@ function inferFrequency(label, path) {
   return "On-demand";
 }
 
+function s20_inScopeFromLLM(pres, meta, startPage) {
+  let p = startPage;
+  const byTower = groupBy(meta.llmInScope, (r) => r.tower || "General");
+  const towers = Array.from(byTower.entries());
+  const ROWS_PER_SLIDE = 12;
+  let secIdx = 1;
+  for (const [tower, rows] of towers) {
+    const pages = chunk(rows, ROWS_PER_SLIDE);
+    pages.forEach((page, pi) => {
+      const s = newSlide(pres);
+      addHeader(
+        s,
+        `IN SCOPE · ${String(secIdx).padStart(2, "0")}  ·  ${tower.toUpperCase()}`,
+        `${tower}${pages.length > 1 ? ` — part ${pi + 1} / ${pages.length}` : ""} · concise scope statements`
+      );
+      const header = tableHeaderRow(["#", "CAPABILITY", "SCOPE"]);
+      const tableRows = page.map((row, idx) => [
+        tableCell(String(pi * ROWS_PER_SLIDE + idx + 1), { align: "center", color: COLORS.muted, fontSize: 9 }),
+        tableCell(row.capability, { bold: true, fontSize: 10 }),
+        tableCell(row.scope, { fontSize: 9 }),
+      ]);
+      s.addTable([header, ...tableRows], {
+        x: 0.5,
+        y: 1.7,
+        w: 12.3,
+        colW: [0.5, 3.5, 8.3],
+        fontFace: FONT,
+        border: { pt: 0.5, color: COLORS.border },
+      });
+      addFooter(s, p, meta.clientName, meta.projectName);
+      p++;
+    });
+    secIdx++;
+  }
+  return p;
+}
+
 function s20_inScopeNarratives(pres, meta, startPage) {
   let p = startPage;
   if (meta.capabilities.length === 0) {
@@ -1169,6 +1206,9 @@ function s20_inScopeNarratives(pres, meta, startPage) {
     addHeader(s, "IN SCOPE · CAPABILITIES", "No capabilities selected.");
     addFooter(s, p, meta.clientName, meta.projectName);
     return p + 1;
+  }
+  if (Array.isArray(meta.llmInScope) && meta.llmInScope.length > 0) {
+    return s20_inScopeFromLLM(pres, meta, startPage);
   }
   const bySection = groupBy(meta.capabilities, (c) => {
     const segs = (c.path || "").split(" > ");
@@ -1273,9 +1313,49 @@ function s_assumptions(pres, meta, page) {
   return page + 1;
 }
 
-// ---- Out of Scope — built from gap tree with verbose narrative, paginated ----
+// ---- Out of Scope — LLM-driven tabular (when available); else gap-tree bullets ----
+
+function s_outOfScopeFromLLM(pres, meta, startPage) {
+  let page = startPage;
+  const ROWS_PER_SLIDE = 10;
+  const bySection = groupBy(meta.llmOutOfScope, (r) => r.section || "General");
+  const sections = Array.from(bySection.entries());
+  let secIdx = 1;
+  for (const [section, rows] of sections) {
+    const pages = chunk(rows, ROWS_PER_SLIDE);
+    pages.forEach((pageRows, pi) => {
+      const s = newSlide(pres);
+      addHeader(
+        s,
+        `OUT OF SCOPE · ${String(secIdx).padStart(2, "0")}  ·  ${section.toUpperCase()}`,
+        `${section}${pages.length > 1 ? ` — part ${pi + 1} / ${pages.length}` : ""} · concise exclusions and rationale`
+      );
+      const header = tableHeaderRow(["#", "ITEM", "RATIONALE"]);
+      const tableRows = pageRows.map((row, idx) => [
+        tableCell(String(pi * ROWS_PER_SLIDE + idx + 1), { align: "center", color: COLORS.muted, fontSize: 9 }),
+        tableCell(row.item, { bold: true, fontSize: 10, color: COLORS.warnDark }),
+        tableCell(row.rationale, { fontSize: 9 }),
+      ]);
+      s.addTable([header, ...tableRows], {
+        x: 0.5,
+        y: 1.7,
+        w: 12.3,
+        colW: [0.5, 3.5, 8.3],
+        fontFace: FONT,
+        border: { pt: 0.5, color: COLORS.border },
+      });
+      addFooter(s, page, meta.clientName, meta.projectName);
+      page++;
+    });
+    secIdx++;
+  }
+  return page;
+}
 
 function s_outOfScope(pres, meta, startPage) {
+  if (Array.isArray(meta.llmOutOfScope) && meta.llmOutOfScope.length > 0) {
+    return s_outOfScopeFromLLM(pres, meta, startPage);
+  }
   let page = startPage;
   const userOoS = (meta.outOfScope || []).map((it) => ({
     section: "Engagement-level",
