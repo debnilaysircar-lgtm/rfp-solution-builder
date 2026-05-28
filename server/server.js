@@ -22,7 +22,7 @@ import {
   generateAssumptions,
   generateDependencies,
   generateNarrativeSections,
-} from "./ollama.js";
+} from "./gemini.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR =

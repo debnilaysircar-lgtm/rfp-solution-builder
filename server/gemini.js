@@ -1,30 +1,47 @@
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:7b";
-const TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS) || 360_000;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_API_BASE =
+  process.env.GEMINI_API_BASE ||
+  "https://generativelanguage.googleapis.com/v1beta";
+const TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 360_000;
 
 async function chatJson(system, user) {
+  if (!GEMINI_API_KEY) {
+    throw new Error(
+      "GEMINI_API_KEY is not set — add it to server/.env (and run via the npm scripts so the file is loaded)."
+    );
+  }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const r = await fetch(`${OLLAMA_URL}/api/chat`, {
+    const url = `${GEMINI_API_BASE}/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`;
+    const r = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+      },
       signal: ctrl.signal,
       body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        stream: false,
-        format: "json",
-        keep_alive: "30m",
-        options: { temperature: 0.3 },
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: {
+          temperature: 0.3,
+          responseMimeType: "application/json",
+        },
       }),
     });
-    if (!r.ok) throw new Error(`Ollama HTTP ${r.status}`);
+    if (!r.ok) {
+      const errText = await r.text().catch(() => "");
+      throw new Error(`Gemini HTTP ${r.status}: ${errText.slice(0, 500)}`);
+    }
     const data = await r.json();
-    const text = data?.message?.content || "";
+    const candidate = data?.candidates?.[0];
+    const text = candidate?.content?.parts?.[0]?.text || "";
+    if (!text) {
+      const reason = candidate?.finishReason || "no content";
+      throw new Error(`Gemini returned no text (finishReason: ${reason})`);
+    }
     return JSON.parse(text);
   } finally {
     clearTimeout(timer);
