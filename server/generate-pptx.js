@@ -1435,7 +1435,88 @@ function s_serviceCatalog(pres, meta, startPage) {
   return p;
 }
 
-// ---- RACI built from selected capabilities, grouped by section, paginated ----
+// ---- RACI: LLM-generated when meta.raci is present; otherwise static fallback ----
+
+function raciCellColor(v) {
+  if (!v || v === "—") return COLORS.muted;
+  if (v.includes("R")) return COLORS.okDark;
+  if (v === "A") return COLORS.accent;
+  if (v === "I") return COLORS.muted;
+  return COLORS.text;
+}
+
+function s_raciFromLLM(pres, meta, startPage) {
+  let page = startPage;
+  const byTower = groupBy(meta.raci, (r) => r.tower || "General");
+  const towers = Array.from(byTower.entries());
+
+  towers.forEach(([tower, rows], i) => {
+    const stakeholders = [];
+    for (const row of rows) {
+      for (const k of Object.keys(row.assignments || {})) {
+        if (!stakeholders.includes(k)) stakeholders.push(k);
+      }
+    }
+    const stakes = stakeholders.slice(0, 5);
+
+    const rowsPerSlide = 8;
+    const pages = chunk(rows, rowsPerSlide);
+    pages.forEach((pageRows, pi) => {
+      const s = newSlide(pres);
+      addHeader(
+        s,
+        `RACI · TOWER ${String(i + 1).padStart(2, "0")}  ·  ${tower.toUpperCase()}`,
+        `Tailored to each in-scope activity${pages.length > 1 ? ` — part ${pi + 1} / ${pages.length}` : ""}.`
+      );
+      addParagraph(
+        s,
+        `R = Responsible · A = Accountable · C = Consulted · I = Informed.`,
+        { y: 1.55, h: 0.4, fontSize: 11, color: COLORS.muted }
+      );
+
+      const activityW = 2.4;
+      const detailW = 4.0;
+      const typeW = 0.85;
+      const stakeW = (12.3 - activityW - detailW - typeW) / Math.max(stakes.length, 1);
+      const colW = [activityW, detailW, typeW, ...stakes.map(() => stakeW)];
+
+      const headerCols = ["ACTIVITY", "ACTIVITY DETAIL", "TYPE", ...stakes.map((s) => s.toUpperCase())];
+
+      const tableRows = [
+        tableHeaderRow(headerCols),
+        ...pageRows.map((row) => {
+          const cells = [
+            tableCell(row.capability, { bold: true, fontSize: 9 }),
+            tableCell(row.activityDetail, { fontSize: 8.5 }),
+            tableCell(row.type, { color: COLORS.muted, align: "center", fontSize: 9 }),
+          ];
+          for (const sk of stakes) {
+            const v = row.assignments?.[sk] || "—";
+            cells.push(tableCell(v, {
+              bold: v !== "—",
+              color: raciCellColor(v),
+              align: "center",
+              fontSize: 9,
+            }));
+          }
+          return cells;
+        }),
+      ];
+
+      s.addTable(tableRows, {
+        x: 0.5,
+        y: 2.05,
+        w: 12.3,
+        colW,
+        fontFace: FONT,
+        border: { type: "solid", color: COLORS.border, pt: 0.5 },
+      });
+      addFooter(s, page, meta.clientName, meta.projectName);
+      page++;
+    });
+  });
+  return page;
+}
 
 function s_raci(pres, meta, startPage) {
   let page = startPage;
@@ -1444,6 +1525,9 @@ function s_raci(pres, meta, startPage) {
     addHeader(s, "RACI", "No capabilities selected.");
     addFooter(s, page, meta.clientName, meta.projectName);
     return page + 1;
+  }
+  if (Array.isArray(meta.raci) && meta.raci.length > 0) {
+    return s_raciFromLLM(pres, meta, startPage);
   }
   const bySection = groupBy(meta.capabilities, (c) => {
     const segs = (c.path || "").split(" > ");

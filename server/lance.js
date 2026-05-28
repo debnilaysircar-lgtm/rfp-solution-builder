@@ -4,7 +4,7 @@ import path from "node:path";
 
 const DB_PATH =
   process.env.VECTOR_DB_PATH ||
-  path.resolve("C:\\Users\\debnilay.sircar\\vectordb-test\\db");
+  path.resolve("C:\\Users\\debnilay.sircar\\rfp-solution-builder\\vectordb-test\\db");
 const SOLUTIONS_DB_PATH =
   process.env.SOLUTIONS_DB_PATH ||
   path.resolve("C:\\Users\\debnilay.sircar\\solutions\\db");

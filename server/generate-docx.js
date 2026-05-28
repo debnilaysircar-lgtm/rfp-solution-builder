@@ -395,16 +395,78 @@ export async function generateDocx(meta, outPath) {
     children.push(table(rows, [40, 14, 12, 12, 11, 11]));
   }
 
-  // ----- 3. RACI (built from selected capabilities) -----
+  // ----- 3. RACI -----
   children.push(heading("3. RACI"));
+  const hasLLMRaci = Array.isArray(meta.raci) && meta.raci.length > 0;
   children.push(
     p(
       `R = Responsible · A = Accountable · C = Consulted · I = Informed. ` +
-        `RACI for each in-scope capability is shown below, grouped by tower. Default split: Accenture is R/A for service operation; ${meta.clientName} is A for business decisions and approvals; SAP (RISE ECS) is I for above-the-line activities.`
+        (hasLLMRaci
+          ? `RACI is tailored per in-scope activity, grouped by tower, with assignments reflecting each activity's risk profile, accountability owner, and execution layer.`
+          : `RACI for each in-scope capability is shown below, grouped by tower. Default split: Accenture is R/A for service operation; ${meta.clientName} is A for business decisions and approvals; SAP (RISE ECS) is I for above-the-line activities.`)
     )
   );
+  const raciCellColor = (v) => {
+    if (!v || v === "—") return COLORS.muted;
+    if (v.includes("R")) return COLORS.ok;
+    if (v === "A") return COLORS.accent;
+    if (v === "I") return COLORS.muted;
+    return COLORS.text;
+  };
   if (meta.capabilities.length === 0) {
     children.push(p("No capabilities selected — RACI is empty.", { italic: true, color: COLORS.muted }));
+  } else if (hasLLMRaci) {
+    const byTower = groupBy(meta.raci, (r) => r.tower || "General");
+    let towerIdx = 1;
+    for (const [tower, rows] of byTower.entries()) {
+      children.push(heading(`3.${towerIdx} Tower — ${tower}`, HeadingLevel.HEADING_2));
+      const stakeholders = [];
+      for (const row of rows) {
+        for (const k of Object.keys(row.assignments || {})) {
+          if (!stakeholders.includes(k)) stakeholders.push(k);
+        }
+      }
+      const stakes = stakeholders.slice(0, 5);
+
+      const activityW = 18;
+      const detailW = 36;
+      const typeW = 8;
+      const remaining = 100 - activityW - detailW - typeW;
+      const stakeW = Math.floor(remaining / Math.max(stakes.length, 1));
+      const lastStakeW = remaining - stakeW * (stakes.length - 1);
+      const stakeWidths = stakes.map((_, i) => (i === stakes.length - 1 ? lastStakeW : stakeW));
+      const widths = [activityW, detailW, typeW, ...stakeWidths];
+
+      const tableRows = [
+        [
+          headerCell("Activity", activityW),
+          headerCell("Activity Detail", detailW),
+          headerCell("Type", typeW),
+          ...stakes.map((sk, i) => headerCell(sk, stakeWidths[i])),
+        ],
+        ...rows.map((row) => {
+          const cells = [
+            cell(row.capability, { bold: true }),
+            cell(row.activityDetail),
+            cell(row.type, { color: COLORS.muted, alignment: AlignmentType.CENTER }),
+          ];
+          for (const sk of stakes) {
+            const v = row.assignments?.[sk] || "—";
+            cells.push(
+              cell(v, {
+                bold: v !== "—",
+                color: raciCellColor(v),
+                alignment: AlignmentType.CENTER,
+              })
+            );
+          }
+          return cells;
+        }),
+      ];
+      children.push(table(tableRows, widths));
+      children.push(p(" ", { size: 8 }));
+      towerIdx++;
+    }
   } else {
     const capsBySection = groupBy(meta.capabilities, (c) => {
       const segs = (c.path || c.label || "").split(" > ");

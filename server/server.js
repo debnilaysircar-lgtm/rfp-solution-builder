@@ -22,6 +22,7 @@ import {
   generateAssumptions,
   generateDependencies,
   generateNarrativeSections,
+  generateRaci,
 } from "./gemini.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -195,13 +196,14 @@ app.post("/api/generate", async (req, res) => {
   const assumptionsQuery = `${meta.projectName} ${productList} engagement assumptions scope responsibility split SAP AMS ${capList}`;
   const dependenciesQuery = `${meta.projectName} ${productList} dependencies infrastructure licenses vendor SAP RISE ECS SI handover ${capList}`;
   const narrativeQuery = `${meta.projectName} ${productList} executive summary deliverables risks limited scope exclusions synergy SI to AMS handover ${capList}`;
+  const raciQuery = `${meta.projectName} ${productList} RACI matrix responsibility split Accenture client SAP ECS CISO audit firefighter access governance ${capList}`;
 
-  const [assumptionsCtx, dependenciesCtx, narrativeCtx] = await Promise.all([
-    searchSolutions(assumptionsQuery, 3).catch((e) => {
+  const [assumptionsCtx, dependenciesCtx, narrativeCtx, raciCtx] = await Promise.all([
+    searchSolutions(assumptionsQuery, 6).catch((e) => {
       console.warn("RAG search (assumptions) failed:", e.message);
       return [];
     }),
-    searchSolutions(dependenciesQuery, 3).catch((e) => {
+    searchSolutions(dependenciesQuery, 6).catch((e) => {
       console.warn("RAG search (dependencies) failed:", e.message);
       return [];
     }),
@@ -209,9 +211,13 @@ app.post("/api/generate", async (req, res) => {
       console.warn("RAG search (narrative) failed:", e.message);
       return [];
     }),
+    searchSolutions(raciQuery, 6).catch((e) => {
+      console.warn("RAG search (raci) failed:", e.message);
+      return [];
+    }),
   ]);
   console.log(
-    `RAG: ${assumptionsCtx.length} assumption, ${dependenciesCtx.length} dependency, ${narrativeCtx.length} narrative chunks`
+    `RAG: ${assumptionsCtx.length} assumption, ${dependenciesCtx.length} dependency, ${narrativeCtx.length} narrative, ${raciCtx.length} raci chunks`
   );
 
   const userInstructions = String(req.body.userInstructions || "").trim();
@@ -249,11 +255,24 @@ app.post("/api/generate", async (req, res) => {
     });
     console.log(`  narrative done in ${Math.round((Date.now() - t0) / 1000)}s`);
   }
+  let llmRaci = null;
+  if ((meta.capabilities || []).length > 0) {
+    console.log("Calling LLM for RACI matrix...");
+    const t0 = Date.now();
+    llmRaci = await generateRaci(meta, raciCtx, userInstructions).catch((e) => {
+      console.warn("LLM raci failed:", e.message);
+      return null;
+    });
+    console.log(`  raci done in ${Math.round((Date.now() - t0) / 1000)}s (${llmRaci?.length || 0} rows)`);
+  }
   if (llmAssumptions && llmAssumptions.length > 0) {
     meta.assumptions = llmAssumptions;
   }
   if (llmDependencies && llmDependencies.length > 0) {
     meta.dependencies = llmDependencies;
+  }
+  if (llmRaci && llmRaci.length > 0) {
+    meta.raci = llmRaci;
   }
   if (llmNarrative) {
     if (llmNarrative.executiveSummary) meta.executiveSummary = llmNarrative.executiveSummary;

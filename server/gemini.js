@@ -5,7 +5,7 @@ const GEMINI_API_BASE =
   "https://generativelanguage.googleapis.com/v1beta";
 const TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 360_000;
 
-async function chatJson(system, user) {
+async function chatJson(system, user, { temperature = 0.3 } = {}) {
   if (!GEMINI_API_KEY) {
     throw new Error(
       "GEMINI_API_KEY is not set — add it to server/.env (and run via the npm scripts so the file is loaded)."
@@ -26,7 +26,7 @@ async function chatJson(system, user) {
         systemInstruction: { parts: [{ text: system }] },
         contents: [{ role: "user", parts: [{ text: user }] }],
         generationConfig: {
-          temperature: 0.3,
+          temperature,
           responseMimeType: "application/json",
         },
       }),
@@ -74,9 +74,9 @@ function projectBrief(meta) {
     .join("\n");
 }
 
-function formatContext(chunks) {
+function formatContext(chunks, maxChunks = 8) {
   if (!chunks || chunks.length === 0) return "";
-  const blocks = chunks.slice(0, 3).map((c, i) => {
+  const blocks = chunks.slice(0, maxChunks).map((c, i) => {
     const trimmed = (c.text || "").replace(/\s+/g, " ").slice(0, 500);
     return `[#${i + 1}]\n${trimmed}`;
   });
@@ -108,19 +108,22 @@ function buildUserMessage({ task, meta, contextChunks, userInstructions }) {
 export async function generateAssumptions(meta, contextChunks = [], userInstructions = "") {
   const system =
     "You are a senior SAP AMS solution architect drafting an engagement Statement of Work. " +
-    "Produce concise, contract-grade assumptions tailored to the project. " +
+    "Produce concise, contract-grade assumptions tailored SPECIFICALLY to this project. " +
     "Use the reference excerpts (from past similar proposals) for tone, depth, and the kinds of clauses typically included, but rewrite for this client; do not name other clients. " +
     "If USER INSTRUCTIONS are provided, they take precedence over all other style guidance. " +
     "Each assumption must be a single sentence. " +
+    "CRITICAL — AVOID GENERIC BOILERPLATE. Every assumption must anchor itself in at least one specific element from the project brief: a named in-scope product (e.g. 'SAP S/4HANA Finance', 'SAP BTP Integration Suite'), a specific capability path (e.g. 'incident management for Order-to-Cash'), the contract term/type, the market unit, the delivery window, or content from the user's notes. " +
+    "Forbidden patterns: bare clauses like 'The client will provide timely access to systems', 'Documentation will be made available', 'The client will designate a point of contact' — unless each is qualified by exactly WHICH product, environment, capability, or interface. Replace any generic phrasing with a specific named target. " +
+    "Vary sentence structure across the list; do not produce templated 'The client will...' clauses repeatedly. Mix subjects (client, Accenture, both parties, third-party vendors, SAP) and grammatical forms. " +
     "Be exhaustive — list every applicable assumption you can justify from the project brief, reference excerpts, and standard SAP AMS practice. Do not artificially limit the count. " +
     "Return strict JSON: { \"assumptions\": string[] }.";
   const user = buildUserMessage({
-    task: "Draft engagement-level assumptions for this SAP AMS engagement. Generate as many distinct, non-redundant assumptions as the engagement warrants.",
+    task: "Draft engagement-level assumptions for this SAP AMS engagement. Generate as many distinct, non-redundant assumptions as the engagement warrants, each clearly tailored to the specific products, capabilities, and constraints in scope.",
     meta,
     contextChunks,
     userInstructions,
   });
-  const out = await chatJson(system, user);
+  const out = await chatJson(system, user, { temperature: 0.7 });
   const items = Array.isArray(out?.assumptions) ? out.assumptions : [];
   return items.map((s) => String(s).trim()).filter(Boolean);
 }
@@ -185,24 +188,104 @@ export async function generateNarrativeSections(meta, contextChunks = [], userIn
   };
 }
 
-export async function generateDependencies(meta, contextChunks = [], userInstructions = "") {
+export async function generateRaci(meta, contextChunks = [], userInstructions = "") {
+  const capabilities = Array.isArray(meta.capabilities) ? meta.capabilities : [];
+  if (capabilities.length === 0) return [];
+
+  const towers = new Map();
+  for (const cap of capabilities.slice(0, 60)) {
+    const path = String(cap.path || cap.label || "").trim();
+    const segs = path.split(" > ").map((s) => s.trim()).filter(Boolean);
+    const tower = segs[0] || "General";
+    const label = String(cap.label || segs[segs.length - 1] || path).trim();
+    if (!label) continue;
+    if (!towers.has(tower)) towers.set(tower, []);
+    towers.get(tower).push(label);
+  }
+  const towerListing = [...towers.entries()]
+    .map(([t, items]) => `Tower: ${t}\n` + items.map((i) => `  - ${i}`).join("\n"))
+    .join("\n\n");
+
   const system =
-    "You are a senior SAP AMS solution architect drafting a solution deck. " +
-    "List the cross-party dependencies that must be in place for delivery. " +
-    "Use the reference excerpts (from past similar proposals) for the kinds of dependencies typically called out, but rewrite for this client; do not name other clients. " +
+    "You are a senior SAP AMS solution architect drafting a RACI matrix for an engagement Statement of Work and Solution Deck. " +
+    "For each in-scope capability listed in CAPABILITIES IN SCOPE, produce ONE matrix row with: " +
+    "(1) capability — the EXACT label as given. " +
+    "(2) tower — the EXACT tower name as given. " +
+    "(3) activityDetail — one short, contract-grade sentence describing what the activity actually entails (≤25 words, concrete and specific). " +
+    "(4) type — exactly one of: 'CR', 'INC', 'SR', 'Periodic', 'CR/INC', 'CR/Periodic', 'INC/Periodic' (Change Request, Incident, Service Request, scheduled cadence, or combo). " +
+    "(5) assignments — an object mapping stakeholder column names to RACI letters: 'R', 'A', 'R/A', 'C', or 'I'. " +
+    "STAKEHOLDERS: choose realistic SAP AMS engagement parties for the activity. Common options: 'Accenture (AO)' or tower-qualified like 'AO Security' / 'AO BASIS' / 'AO Functional'; client teams such as 'Client Business', 'Client Security', 'Client Basis', 'Client CISO/Audit'; 'SAP ECS' (RISE infrastructure); 'SI Vendor'; 'Hosting Provider'. " +
+    "Within a single tower, use a CONSISTENT set of 3 to 5 stakeholder columns across all rows so the matrix is rectangular. Different towers MAY use different stakeholder sets (e.g. Security tower includes 'Client CISO/Audit'; BASIS tower includes 'SAP ECS'). " +
+    "Use the reference excerpts (from past similar SAP AMS proposals) for typical splits, but tailor to this engagement; do not name other clients. " +
     "If USER INSTRUCTIONS are provided, they take precedence over all other style guidance. " +
-    "The dependency name must be a short natural-language phrase with spaces (e.g. 'Network bandwidth', 'License procurement'), NOT CamelCase or snake_case. " +
-    "Each item must have a short dependency name, a detail sentence, a priority " +
-    "of exactly 'High', 'Med', or 'Low', and a mitigation sentence. " +
-    "Be exhaustive — list every cross-party dependency that could plausibly affect delivery. Do not artificially limit the count. " +
-    "Return strict JSON: { \"dependencies\": [{ \"dependency\": string, \"detail\": string, \"priority\": \"High\"|\"Med\"|\"Low\", \"mitigation\": string }] }.";
+    "CRITICAL — THE MATRIX MUST BE BALANCED. Do NOT default Accenture to R/A on every row. Examples of correct accountability shifts: " +
+    "• Pure execution work (role creation, incident triage, performance tuning) → Accenture is R/A. " +
+    "• Governance / audit / SOX ITGC / quarterly UAR → client CISO/Audit is A. " +
+    "• Break-glass / emergency access / firefighter governance → Client CISO is A, Accenture is R. " +
+    "• Activities executed at SAP ECS infrastructure layer (system refresh, OS patch, HANA restore) → SAP ECS is R; Accenture coordinates (C). " +
+    "• Mitigation control ownership, SoD remediation acceptance → Client Security or CISO is A. " +
+    "• Post-refresh user management, technical user lifecycle → both Accenture AND Client Basis can be R. " +
+    "Vary the letters across rows. A matrix where every row reads R/A · A · I will be REJECTED. " +
+    "Return strict JSON: { \"raci\": [ { \"capability\": string, \"tower\": string, \"activityDetail\": string, \"type\": string, \"assignments\": { stakeholder: string, ... } } ] }. Produce one row per input capability, in the same order as listed under each tower.";
   const user = buildUserMessage({
-    task: "Draft engagement dependencies for this SAP AMS engagement. Generate as many distinct, non-redundant dependencies as the engagement warrants.",
+    task:
+      "Produce a balanced RACI matrix for the following capabilities. Output exactly one row per capability in the order shown.\n\nCAPABILITIES IN SCOPE:\n\n" +
+      towerListing,
     meta,
     contextChunks,
     userInstructions,
   });
-  const out = await chatJson(system, user);
+
+  const out = await chatJson(system, user, { temperature: 0.6 });
+  const items = Array.isArray(out?.raci) ? out.raci : [];
+
+  const validLetter = (v) => {
+    const s = String(v || "").trim().toUpperCase();
+    if (s === "A/R") return "R/A";
+    if (["R", "A", "R/A", "C", "I"].includes(s)) return s;
+    return "I";
+  };
+
+  return items
+    .map((row) => {
+      const rawAssign =
+        row?.assignments && typeof row.assignments === "object" ? row.assignments : {};
+      const assignments = {};
+      for (const [k, v] of Object.entries(rawAssign)) {
+        const stakeholder = String(k).trim();
+        if (stakeholder) assignments[stakeholder] = validLetter(v);
+      }
+      return {
+        capability: String(row?.capability || "").trim(),
+        tower: String(row?.tower || "").trim() || "General",
+        activityDetail: String(row?.activityDetail || "").trim(),
+        type: String(row?.type || "Periodic").trim(),
+        assignments,
+      };
+    })
+    .filter((r) => r.capability && Object.keys(r.assignments).length > 0);
+}
+
+export async function generateDependencies(meta, contextChunks = [], userInstructions = "") {
+  const system =
+    "You are a senior SAP AMS solution architect drafting a solution deck. " +
+    "List the cross-party dependencies that must be in place for delivery, tailored SPECIFICALLY to this project. " +
+    "Use the reference excerpts (from past similar proposals) for the kinds of dependencies typically called out, but rewrite for this client; do not name other clients. " +
+    "If USER INSTRUCTIONS are provided, they take precedence over all other style guidance. " +
+    "The dependency name must be a short natural-language phrase with spaces (e.g. 'S/4HANA Finance license procurement', 'BTP Integration Suite tenant provisioning'), NOT CamelCase or snake_case. " +
+    "Each item must have a short dependency name, a detail sentence, a priority of exactly 'High', 'Med', or 'Low', and a mitigation sentence. " +
+    "CRITICAL — AVOID GENERIC BOILERPLATE. Every dependency name and detail must anchor in something concrete from the project brief: a specific named in-scope product, a specific capability path, the contract term, the market unit, the delivery window, or content from the user's notes. " +
+    "Forbidden patterns: bare items like 'License procurement', 'Network bandwidth', 'Point of contact' — qualify each: WHICH licenses, for WHICH product, between WHICH parties. Replace generic phrasing with named targets. " +
+    "Vary the parties involved across the list (client, Accenture, SAP, SI, hosting provider, third-party ISVs) and the categories (infrastructure, licensing, data, people, contracts, integrations) — do not concentrate on one type. " +
+    "Be exhaustive — list every cross-party dependency that could plausibly affect delivery. Do not artificially limit the count. " +
+    "Return strict JSON: { \"dependencies\": [{ \"dependency\": string, \"detail\": string, \"priority\": \"High\"|\"Med\"|\"Low\", \"mitigation\": string }] }.";
+  const user = buildUserMessage({
+    task: "Draft engagement dependencies for this SAP AMS engagement. Generate as many distinct, non-redundant dependencies as the engagement warrants, each clearly tailored to the specific products, capabilities, and constraints in scope.",
+    meta,
+    contextChunks,
+    userInstructions,
+  });
+  const out = await chatJson(system, user, { temperature: 0.7 });
   const items = Array.isArray(out?.dependencies) ? out.dependencies : [];
   return items
     .map((d) => ({
