@@ -7,12 +7,18 @@ import StepGenerate from "./components/StepGenerate.jsx";
 import Summary from "./components/Summary.jsx";
 
 const STEPS = [
-  { id: "folder", label: "1. Project Details", hint: "Client, commercials, volumetrics" },
-  { id: "products", label: "2. SAP Products", hint: "Select products in scope" },
-  { id: "capabilities", label: "3. Capabilities", hint: "Pick architecture capabilities" },
-  { id: "staffing", label: "4. Resource Loading", hint: "Edit aggregated FTE per role" },
-  { id: "generate", label: "5. Generate", hint: "Produce PPTX + DOCX" },
+  { id: "folder",       num: "01", label: "Project Details",  hint: "Client, commercials, volumetrics" },
+  { id: "products",     num: "02", label: "SAP Products",     hint: "Select products in scope" },
+  { id: "capabilities", num: "03", label: "Capabilities",     hint: "Pick architecture capabilities" },
+  { id: "staffing",     num: "04", label: "Resource Loading", hint: "Edit aggregated FTE per role" },
+  { id: "generate",     num: "05", label: "Generate",         hint: "Produce PPTX + DOCX" },
 ];
+
+function nowStamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 const DEFAULT_TEAM = [
   ["Solution Architect", "", ""],
@@ -203,24 +209,52 @@ export default function App() {
     );
   }
 
+  const activeIdx = STEPS.findIndex((s) => s.id === activeStep);
+  const activeMeta = STEPS[activeIdx] || STEPS[0];
+
   return (
     <div className="app">
+      <div className="ticker">
+        <span className="dot-live" />
+        <span>Atelier · Live</span>
+        <span className="sep">/</span>
+        <span>{nowStamp()}</span>
+        <span className="sep">/</span>
+        <span>Folio №{String(activeIdx + 1).padStart(2, "0")}/05</span>
+        <span className="sep">/</span>
+        <span>SAP BG Tech Factory</span>
+        <span className="grow" />
+        <span>An <em>editorial</em> tool for solution architects</span>
+      </div>
+
       <div className="topbar">
-        <div className="logo">
-          &gt; accenture<span className="dot">.</span>
+        <div className="brand">
+          <div className="mark">
+            <span className="chev">&gt;</span>accenture<span className="amp">.</span>
+          </div>
+          <div className="seal">Rfp · SAP Tech Factory</div>
         </div>
-        <div className="sub">RFP Solution Builder · SAP BG Tech Factory</div>
-        <div className="grow" />
-        {health?.ok ? (
-          <span className="pill ok">
-            DB ok · {health.tables.sap_products} products · {health.tables.arch_trees}{" "}
-            arch nodes
-          </span>
-        ) : (
-          <span className="pill err">
-            {health?.error ? "DB error" : "checking…"}
-          </span>
-        )}
+
+        <div className="masthead">
+          <div className="super">Folio {activeMeta.num} · of 05</div>
+          <h1>
+            The Solution Builder<span className="punct">.</span>
+          </h1>
+        </div>
+
+        <div className="status-block">
+          {health?.ok ? (
+            <span className="pill ok">
+              <span className="led" />
+              VectorDB · {health.tables.sap_products} prod · {health.tables.arch_trees} nodes
+            </span>
+          ) : (
+            <span className="pill err">
+              <span className="led" />
+              {health?.error ? "DB unreachable" : "Handshaking…"}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="main">
@@ -235,8 +269,8 @@ export default function App() {
               }
               onClick={() => setActiveStep(s.id)}
             >
-              <div className="num">{completed[s.id] ? "✓" : s.label[0]}</div>
-              <div>
+              <div className="num">{s.num}</div>
+              <div className="meta">
                 <div className="label">{s.label}</div>
                 <div className="hint">{s.hint}</div>
               </div>
@@ -244,7 +278,7 @@ export default function App() {
           ))}
         </aside>
 
-        <main className="content">{StepView()}</main>
+        <main className="content" key={activeStep}>{StepView()}</main>
 
         <aside className="summary">
           <Summary

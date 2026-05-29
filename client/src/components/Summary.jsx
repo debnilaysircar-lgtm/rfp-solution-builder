@@ -9,22 +9,22 @@ export default function Summary({
 }) {
   return (
     <div>
-      <h3>Selection summary</h3>
+      <h3>Spec sheet</h3>
       <div className="stat">
         <div>Client</div>
-        <div className="v" style={{ fontSize: 12 }}>{clientName || "—"}</div>
+        <div className="v" data-text="true">{clientName || "—"}</div>
       </div>
       <div className="stat">
         <div>Project</div>
-        <div className="v" style={{ fontSize: 12 }}>{projectName || "—"}</div>
+        <div className="v" data-text="true">{projectName || "—"}</div>
       </div>
       <div className="stat">
         <div>SAP products</div>
-        <div className="v">{selectedProducts.length}</div>
+        <div className="v">{String(selectedProducts.length).padStart(2, "0")}</div>
       </div>
       <div className="stat">
         <div>Capabilities</div>
-        <div className="v">{selectedCapabilities.length}</div>
+        <div className="v">{String(selectedCapabilities.length).padStart(2, "0")}</div>
       </div>
 
       {selectedProducts.length > 0 && (
